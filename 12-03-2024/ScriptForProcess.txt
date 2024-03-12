@@ -1,0 +1,30 @@
+++++++++++++++++++++++++++++++++++++++++++++
+++++++++++ Script for Process Data +++++++++
+++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+
+# Get the current date
+    $todayDate = Get-Date -Format "yyyy-MM-dd"
+
+    # Get the list of processes for today using WMI
+    $todayProcesses = Get-WmiObject Win32_Process | Where-Object { $_.CreationDate -ge (Get-Date $todayDate) }
+
+    # Create a hashtable to store unique process names
+    $uniqueProcesses = @{}
+
+    # Add unique process names to the hashtable
+    foreach ($process in $todayProcesses) {
+        $uniqueProcesses[$process.Name] = $process
+    }
+
+    # Display the process information
+    Write-Host "Unique processes running on $($todayDate):`n"
+
+    foreach ($uniqueProcess in $uniqueProcesses.Values) {
+        Write-Host "Name: $($uniqueProcess.Name), ProcessID: $($uniqueProcess.ProcessId), CreationDate: $($uniqueProcess.CreationDate)"
+    }
+
+    # Save the information to a file if needed
+    # $uniqueProcesses.Values | Out-File -FilePath "UniqueProcesses.txt"

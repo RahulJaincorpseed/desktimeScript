@@ -1,0 +1,104 @@
++++++++++++++++++++++++++++++++++++++
+++++++++++ Script for Login +++++++++
++++++++++++++++++++++++++++++++++++++
+
+param (
+    [string]$apiEndpoint = "http://localhost:8888/endpoint"  # Replace with actual URL and port
+)
+
+function Get-LatestLoginLogout {
+    # Filter for logon and logoff events
+    try {
+        $events = Get-WinEvent -FilterHashtable @{Logname='Security';ID=4624, 4634} -MaxEvents 2 |
+                  Sort-Object TimeCreated -Descending
+        if ($events) {
+            return $events  # Return the latest event
+        } else {
+            return $null  # Indicate no events found
+        }
+    } catch {
+        Write-Host "Error retrieving login/logout events: $_"
+        return $null
+    }
+}
+
+# Get login/logout information
+$latestEvent = Get-LatestLoginLogout
+
+if ($latestEvent) {
+    $loginTime = $latestEvent[0].TimeCreated
+    $logoutTime = $latestEvent[1].TimeCreated
+} else {
+    $loginTime = $null
+    $logoutTime = "Logout information not available"
+}
+
+# Format the login time
+if ($loginTime -ne $null) {
+    $indiaTimeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("India Standard Time")
+    $indiaLoginTime = [System.TimeZoneInfo]::ConvertTime($loginTime, $indiaTimeZone)
+    $formattedLoginTime = $indiaLoginTime.ToString("yyyy-MM-ddTHH:mm:ss")
+} else {
+    $formattedLoginTime = "Login information not available"
+}
+
+# Get the most recent system startup event
+$event = Get-WinEvent -LogName System -FilterXPath "*[System[EventID=12 or EventID=6005]]" | Sort-Object TimeCreated -Descending | Select-Object -First 1
+
+# Display the event information
+if ($event) {
+    $eventTime = $event.TimeCreated
+
+    # Convert the event time to India Standard Time (IST)
+    $indiaTimeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("India Standard Time")
+    $indiaEventTime = [System.TimeZoneInfo]::ConvertTime($eventTime, $indiaTimeZone)
+
+    # Format the event time in ISO 8601 format
+    $formattedEventTime = $indiaEventTime.ToString("yyyy-MM-ddTHH:mm:ss")
+
+    Write-Host "System Startup Event Time (IST): $formattedEventTime"
+
+    # Get current username
+    $currentUsername = $env:USERNAME
+
+    # Create a User object
+    $user = @{
+        username            = $currentUsername
+        loginDate           = $indiaEventTime.ToString("yyyy-MM-dd")
+        loginTime           = $formattedLoginTime
+        loginTimeConvention = $indiaEventTime.ToString("tt")
+        logoutTime          = if ($logoutTime -ne "Logout information not available") {
+                                $indiaEventTime.ToString("yyyy-MM-ddTHH:mm:ss")
+                             } else {
+                                "Logout information not available"
+                             }
+    }
+
+    # Convert the PowerShell object to JSON for User
+    $jsonUserData = @{
+        "username"            = $user.username
+        "loginDate"           = $user.loginDate
+        "logoutTime"          = $user.logoutTime
+        "loginTime"           = $user.loginTime
+        "loginTimeConvention" = $user.loginTimeConvention
+    } | ConvertTo-Json
+
+    Write-Host "User Object: $user"
+    Write-Host "JSON User Data: $jsonUserData"
+
+    # Send the user data to the User API
+    try {
+        Invoke-RestMethod -Uri $apiEndpoint -Method Post -Body $jsonUserData -ContentType 'application/json'
+        Write-Host "User data sent successfully!"
+    } catch {
+        Write-Host "Error sending user data to the API: $_"
+        if ($_.Exception.Response) {
+            $responseContent = $_.Exception.Response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($responseContent)
+            $responseBody = $reader.ReadToEnd()
+            Write-Host "Response Content: $responseBody"
+        }
+    }
+} else {
+    Write-Host "No system startup events found."
+}
